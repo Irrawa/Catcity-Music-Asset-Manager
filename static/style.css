@@ -267,6 +267,34 @@ button.danger:hover {
   background: rgba(255,255,255,0.02);
 }
 
+/* Split UI: track picker list */
+.cluster-track-list {
+  max-height: 32vh;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 8px 10px;
+  background: rgba(255,255,255,0.02);
+}
+
+.cluster-track-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 6px;
+  border-radius: 10px;
+}
+
+.cluster-track-row:hover {
+  background: rgba(255,255,255,0.03);
+}
+
+.cluster-track-row .meta {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
 .cluster-row {
   display: flex;
   justify-content: space-between;

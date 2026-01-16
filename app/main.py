@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Any, Dict, Optional
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
@@ -487,6 +487,85 @@ async def api_clusters_merge(request: Request) -> Dict[str, Any]:
 
     st.save()
     return {"ok": True, "moved": moved}
+
+
+@app.post("/api/clusters/split")
+async def api_clusters_split(request: Request) -> Dict[str, Any]:
+    """Split a cluster into two.
+
+    The selected tracks are moved from the source cluster into a newly created cluster.
+    Virtual keys and per-track metadata are preserved.
+
+    Payload:
+      - source_cluster_id: str
+      - track_ids: list[str] (subset of tracks in the source cluster)
+      - new_cluster_name: str (optional)
+    """
+    st = require_state()
+    if st.catalog is None:
+        raise HTTPException(status_code=400, detail="App not configured")
+
+    payload = await request.json()
+    source_id = str(payload.get('source_cluster_id', '')).strip()
+    new_name = str(payload.get('new_cluster_name', '')).strip()
+    track_ids = payload.get('track_ids', [])
+
+    try:
+        source_uuid = UUID(source_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid cluster id")
+
+    if not isinstance(track_ids, list):
+        raise HTTPException(status_code=400, detail="track_ids must be a list")
+
+    ensure_catalog_clusters(st.catalog)
+    source_cluster = _find_cluster(st, source_uuid)
+    if source_cluster is None:
+        raise HTTPException(status_code=404, detail="Cluster not found")
+
+    source_tracks = _get_cluster_tracks(st, source_uuid)
+    if not source_tracks:
+        raise HTTPException(status_code=400, detail="Source cluster has no tracks")
+
+    # Parse and validate track ids
+    chosen: set[UUID] = set()
+    for raw in track_ids:
+        try:
+            tid = UUID(str(raw))
+        except Exception:
+            raise HTTPException(status_code=400, detail=f"Invalid track_id: {raw}")
+        chosen.add(tid)
+
+    if not chosen:
+        raise HTTPException(status_code=400, detail="No tracks selected")
+
+    # Ensure all chosen tracks belong to the source cluster
+    source_track_ids = {t.track_id for t in source_tracks}
+    not_in_cluster = [str(tid) for tid in chosen if tid not in source_track_ids]
+    if not_in_cluster:
+        raise HTTPException(status_code=400, detail="Some selected tracks are not in the source cluster")
+
+    if len(chosen) >= len(source_tracks):
+        raise HTTPException(status_code=400, detail="Cannot split: selection must be a strict subset (leave at least one track)")
+
+    # Create the new cluster
+    new_cluster_id = uuid4()
+
+    # Default name: derive from source name, but keep it short and readable.
+    if not new_name:
+        base = (source_cluster.name or 'cluster').strip()
+        new_name = f"{base} (split)"
+
+    st.catalog.clusters.append(Cluster(cluster_id=new_cluster_id, name=new_name))
+
+    moved = 0
+    for t in st.catalog.tracks:
+        if t.track_id in chosen and getattr(t, 'cluster_id', None) == source_uuid:
+            t.cluster_id = new_cluster_id
+            moved += 1
+
+    st.save()
+    return {"ok": True, "new_cluster_id": str(new_cluster_id), "moved": moved}
 
 @app.get("/api/tracks")
 def api_tracks() -> Dict[str, Any]:

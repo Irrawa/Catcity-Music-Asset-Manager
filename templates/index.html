@@ -272,6 +272,30 @@
         </div>
 
         <div class="card" style="margin-top: 10px;">
+          <div class="card-title">Split cluster</div>
+          <div class="grid2">
+            <label>
+              Cluster to split
+              <select id="clusterSplitSourceSelect"></select>
+            </label>
+            <label>
+              New cluster name (optional)
+              <input id="clusterSplitNewName" type="text" placeholder="e.g. calm_exploration_piano_fantasy" />
+            </label>
+          </div>
+          <div class="muted tiny" style="margin-top:6px;">Select a subset of tracks to move into a new cluster. (At least one track must remain in the original cluster.)</div>
+          <div class="row" style="justify-content: space-between; margin-top: 10px; gap: 8px; flex-wrap: wrap; align-items: center;">
+            <div class="row" style="gap: 8px; flex-wrap: wrap;">
+              <button id="clusterSplitSelectAllBtn" class="secondary" type="button">Select all</button>
+              <button id="clusterSplitSelectNoneBtn" class="secondary" type="button">Select none</button>
+              <span id="clusterSplitCountHint" class="muted tiny"></span>
+            </div>
+            <button id="clusterSplitBtn" type="button">Split</button>
+          </div>
+          <div id="clusterSplitTrackList" class="cluster-track-list" style="margin-top:10px;"></div>
+        </div>
+
+        <div class="card" style="margin-top: 10px;">
           <div class="card-title">Clusters</div>
           <div class="muted tiny" style="margin-top:6px;">Tip: click a cluster row to set it as Target. Use the buttons on the right to set Target/Source quickly. Scroll inside this list when there are many clusters.</div>
           <div id="clusterList" style="margin-top:10px;"></div>

@@ -6,6 +6,9 @@ let selectedId = null;
 let selectedTrack = null;
 let dirty = false;
 
+// Cluster split UI state: cluster_id -> Set(track_id)
+let clusterSplitSelection = {};
+
 const el = (id) => document.getElementById(id);
 
 
@@ -1306,6 +1309,103 @@ async function openClusterAdminModal() {
   }
 }
 
+function _getClusterSplitSet(clusterId) {
+  if (!clusterId) return new Set();
+  if (!clusterSplitSelection[clusterId]) clusterSplitSelection[clusterId] = new Set();
+  return clusterSplitSelection[clusterId];
+}
+
+function _tracksInCluster(clusterId) {
+  if (!clusterId) return [];
+  return (tracks || []).filter(t => String(t.cluster_id || '') === String(clusterId));
+}
+
+function renderClusterSplitTrackList() {
+  const sourceSel = el('clusterSplitSourceSelect');
+  const list = el('clusterSplitTrackList');
+  const hint = el('clusterSplitCountHint');
+  const btn = el('clusterSplitBtn');
+  if (!sourceSel || !list) return;
+
+  const cid = sourceSel.value;
+  const ctracks = _tracksInCluster(cid);
+  const set = _getClusterSplitSet(cid);
+
+  // Drop selections that no longer exist
+  const idsNow = new Set(ctracks.map(t => t.track_id));
+  for (const x of Array.from(set)) {
+    if (!idsNow.has(x)) set.delete(x);
+  }
+
+  list.innerHTML = '';
+  if (!ctracks.length) {
+    const empty = document.createElement('div');
+    empty.className = 'muted tiny';
+    empty.textContent = 'No tracks in this cluster.';
+    list.appendChild(empty);
+    if (hint) hint.textContent = '';
+    if (btn) btn.disabled = true;
+    return;
+  }
+
+  // Stable ordering for usability
+  const ordered = ctracks.slice().sort((a, b) => {
+    const ka = String(a.virtual_key || '');
+    const kb = String(b.virtual_key || '');
+    const c = ka.localeCompare(kb);
+    if (c !== 0) return c;
+    return String(a.original_path || '').localeCompare(String(b.original_path || ''));
+  });
+
+  for (const t of ordered) {
+    const row = document.createElement('label');
+    row.className = 'cluster-track-row';
+    row.style.cursor = 'pointer';
+
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = set.has(t.track_id);
+    cb.onchange = () => {
+      if (cb.checked) set.add(t.track_id);
+      else set.delete(t.track_id);
+      renderClusterSplitTrackList();
+    };
+
+    const txt = document.createElement('div');
+    txt.style.flex = '1';
+    const vk = escapeHtml(t.virtual_key || '');
+    const p = escapeHtml(t.original_path || '');
+    txt.innerHTML = `<div><strong>${vk}</strong></div><div class="meta">${p}</div>`;
+
+    row.appendChild(cb);
+    row.appendChild(txt);
+    list.appendChild(row);
+  }
+
+  const selectedCount = set.size;
+  const total = ctracks.length;
+  if (hint) hint.textContent = `${selectedCount} / ${total} selected`;
+
+  // Must be a strict subset: cannot move 0 or all.
+  if (btn) btn.disabled = (selectedCount <= 0 || selectedCount >= total);
+}
+
+function clusterSplitSelectAll() {
+  const cid = el('clusterSplitSourceSelect') ? el('clusterSplitSourceSelect').value : '';
+  const ctracks = _tracksInCluster(cid);
+  const set = _getClusterSplitSet(cid);
+  set.clear();
+  for (const t of ctracks) set.add(t.track_id);
+  renderClusterSplitTrackList();
+}
+
+function clusterSplitSelectNone() {
+  const cid = el('clusterSplitSourceSelect') ? el('clusterSplitSourceSelect').value : '';
+  const set = _getClusterSplitSet(cid);
+  set.clear();
+  renderClusterSplitTrackList();
+}
+
 function closeClusterAdminModal() {
   el('clusterAdminModal').style.display = 'none';
 }
@@ -1321,6 +1421,8 @@ async function renderClusterAdminModal() {
 
   const targetSel = el('clusterTargetSelect');
   const sourceSel = el('clusterSourceSelect');
+  const splitSel = el('clusterSplitSourceSelect');
+  const splitList = el('clusterSplitTrackList');
   const list = el('clusterList');
   const hint = el('clusterMergeHint');
 
@@ -1330,7 +1432,9 @@ async function renderClusterAdminModal() {
 
   if (targetSel) targetSel.innerHTML = '';
   if (sourceSel) sourceSel.innerHTML = '';
+  if (splitSel) splitSel.innerHTML = '';
   if (list) list.innerHTML = '';
+  if (splitList) splitList.innerHTML = '';
 
   if (!clusters || clusters.length === 0) {
     if (list) {
@@ -1353,11 +1457,21 @@ async function renderClusterAdminModal() {
     o2.value = c.cluster_id;
     o2.textContent = clusterLabel(c);
     if (sourceSel) sourceSel.appendChild(o2);
+
+    const o3 = document.createElement('option');
+    o3.value = c.cluster_id;
+    o3.textContent = clusterLabel(c);
+    if (splitSel) splitSel.appendChild(o3);
   }
 
   // Default: target = current track cluster if available
   if (selectedTrack && selectedTrack.cluster_id && targetSel) {
     targetSel.value = selectedTrack.cluster_id;
+  }
+
+  // Default: split source = current track cluster if available
+  if (selectedTrack && selectedTrack.cluster_id && splitSel) {
+    splitSel.value = selectedTrack.cluster_id;
   }
 
   // Default source: first different
@@ -1367,6 +1481,11 @@ async function renderClusterAdminModal() {
       const alt = clusters.find(c => c.cluster_id !== targetSel.value);
       if (alt) sourceSel.value = alt.cluster_id;
     }
+  }
+
+  // Ensure split select has a value
+  if (splitSel && !splitSel.value && clusters[0]) {
+    splitSel.value = clusters[0].cluster_id;
   }
 
   // Helper: set select value and visually highlight
@@ -1439,6 +1558,9 @@ async function renderClusterAdminModal() {
   }
 
   highlightSelected();
+
+  // Split list for currently selected split source
+  renderClusterSplitTrackList();
 }
 
 async function mergeClustersFromModal() {
@@ -1461,6 +1583,44 @@ async function mergeClustersFromModal() {
     await renderClusterAdminModal();
   } catch (e) {
     alert(`Merge failed: ${e.message}`);
+  }
+}
+
+async function splitClusterFromModal() {
+  const source = el('clusterSplitSourceSelect') ? el('clusterSplitSourceSelect').value : '';
+  const name = el('clusterSplitNewName') ? el('clusterSplitNewName').value.trim() : '';
+  if (!source) return;
+
+  const ctracks = _tracksInCluster(source);
+  const set = _getClusterSplitSet(source);
+  const ids = Array.from(set);
+  if (!ids.length) {
+    alert('Please select at least 1 track to split.');
+    return;
+  }
+  if (ids.length >= ctracks.length) {
+    alert('Selection must be a strict subset: leave at least 1 track in the original cluster.');
+    return;
+  }
+
+  const ok = confirm(`Split ${ids.length} track(s) into a new cluster?`);
+  if (!ok) return;
+
+  try {
+    await apiJSON('/api/clusters/split', {
+      method: 'POST',
+      body: JSON.stringify({ source_cluster_id: source, track_ids: ids, new_cluster_name: name })
+    });
+
+    // Clear selection for this source cluster (so user doesn't accidentally repeat)
+    set.clear();
+    if (el('clusterSplitNewName')) el('clusterSplitNewName').value = '';
+
+    await refreshAfterCatalogMutation();
+    await refreshClusters();
+    await renderClusterAdminModal();
+  } catch (e) {
+    alert(`Split failed: ${e.message}`);
   }
 }
 
@@ -1509,6 +1669,20 @@ async function init() {
       el('clusterAdminCloseBtnTop').addEventListener('click', closeClusterAdminModal);
     }
     el('clusterMergeBtn').addEventListener('click', mergeClustersFromModal);
+
+    // Cluster split actions
+    if (el('clusterSplitSourceSelect')) {
+      el('clusterSplitSourceSelect').addEventListener('change', renderClusterSplitTrackList);
+    }
+    if (el('clusterSplitSelectAllBtn')) {
+      el('clusterSplitSelectAllBtn').addEventListener('click', clusterSplitSelectAll);
+    }
+    if (el('clusterSplitSelectNoneBtn')) {
+      el('clusterSplitSelectNoneBtn').addEventListener('click', clusterSplitSelectNone);
+    }
+    if (el('clusterSplitBtn')) {
+      el('clusterSplitBtn').addEventListener('click', splitClusterFromModal);
+    }
 
     await refreshTracks(true);
     renderList();
