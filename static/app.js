@@ -1411,13 +1411,40 @@ function closeClusterAdminModal() {
 }
 
 function clusterLabel(c) {
-  const n = c.name || '';
+  const rawName = String(c.name || '').trim();
   const cnt = c.track_count != null ? c.track_count : 0;
-  return `${n}  (${cnt})`;
+  const idShort = String(c.cluster_id || '').slice(0, 8);
+  const name = rawName ? rawName : (idShort ? `Cluster ${idShort}` : 'Cluster');
+  return `${name}  (${cnt})`;
 }
 
 async function renderClusterAdminModal() {
   await refreshClusters();
+
+  // Fallback: if the clusters endpoint fails (or returns empty) but tracks have
+  // cluster_id info, reconstruct a minimal cluster list from tracks so the split
+  // panel remains usable.
+  if ((!clusters || clusters.length === 0) && (tracks && tracks.length)) {
+    const map = new Map();
+    for (const t of tracks) {
+      const cid = t.cluster_id;
+      if (!cid) continue;
+      if (!map.has(cid)) {
+        map.set(cid, {
+          cluster_id: cid,
+          name: t.cluster_name || '',
+          track_count: 0,
+          representative_track_id: t.track_id || null,
+          mood: '',
+          context: '',
+          instrument: '',
+          style: '',
+        });
+      }
+      map.get(cid).track_count += 1;
+    }
+    clusters = Array.from(map.values()).sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+  }
 
   const targetSel = el('clusterTargetSelect');
   const sourceSel = el('clusterSourceSelect');

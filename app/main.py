@@ -43,6 +43,33 @@ def _cluster_id_to_name_map(st: State) -> Dict[str, str]:
     return {str(c.cluster_id): c.name for c in (st.catalog.clusters or [])}
 
 
+def _ensure_clusters_saved_if_upgraded(st: State) -> None:
+    """Ensure catalog clusters exist and persist the upgrade if needed.
+
+    Some older catalog JSON files may not include clusters or track.cluster_id.
+    The UI relies on cluster ids being present in /api/tracks.
+    This helper performs a safe, one-time schema backfill and saves only when
+    it detects that an upgrade/backfill actually happened.
+    """
+    if st.catalog is None:
+        return
+    cat = st.catalog
+
+    prev_schema = getattr(cat, 'schema_version', 1)
+    prev_clusters_len = len(getattr(cat, 'clusters', []) or [])
+    prev_missing_cluster_id = any(getattr(t, 'cluster_id', None) is None for t in (cat.tracks or []))
+
+    ensure_catalog_clusters(cat)
+
+    changed = (
+        prev_schema != getattr(cat, 'schema_version', 1)
+        or prev_clusters_len != len(getattr(cat, 'clusters', []) or [])
+        or prev_missing_cluster_id
+    )
+    if changed:
+        st.save()
+
+
 def _pick_identity_value(track: Track, group: str, st: State) -> str:
     """Pick the canonical identity value for a VK component group."""
     if track.tags and group in track.tags and track.tags[group]:
@@ -291,6 +318,11 @@ def api_status() -> Dict[str, Any]:
             "catalog_file": st.cfg.catalog_file,
         }
 
+    # Ensure older catalogs are upgraded to include clusters before the UI loads.
+    # This avoids cases where /api/tracks returns cluster_id=None for every track,
+    # which breaks cluster operations like splitting.
+    _ensure_clusters_saved_if_upgraded(st)
+
     return {
         "configured": True,
         "raw_music_directory": str(st.raw_dir),
@@ -325,7 +357,7 @@ def api_clusters() -> Dict[str, Any]:
     if st.catalog is None:
         raise HTTPException(status_code=400, detail="App not configured")
 
-    ensure_catalog_clusters(st.catalog)
+    _ensure_clusters_saved_if_upgraded(st)
 
     # Precompute counts and a representative track for shared metadata.
     tracks_by_cluster: Dict[UUID, list[Track]] = {}
@@ -572,6 +604,10 @@ def api_tracks() -> Dict[str, Any]:
     st = require_state()
     if st.catalog is None:
         raise HTTPException(status_code=400, detail="App not configured")
+
+    # Ensure cluster_id is available on all tracks. This is important for
+    # cluster split UI which lists tracks per cluster.
+    _ensure_clusters_saved_if_upgraded(st)
 
     # Provide a lighter list payload for the library panel
     cid_to_name = _cluster_id_to_name_map(st)
