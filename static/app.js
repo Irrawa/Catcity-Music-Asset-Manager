@@ -41,8 +41,25 @@ function escapeRegExp(str) {
   return String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+function _isUnknownTagValue(v) {
+  const s = String(v || '').trim().toLowerCase();
+  return s === 'unk' || s === 'unknown';
+}
+
+function _normalizeTagArray(arr) {
+  if (!Array.isArray(arr)) return [];
+  const out = [];
+  for (const x of arr) {
+    const xs = String(x);
+    if (_isUnknownTagValue(xs)) continue;
+    if (!out.includes(xs)) out.push(xs);
+  }
+  return out;
+}
+
 function getVkTagValue(groupKey) {
-  const arr = (selectedTrack && selectedTrack.tags && selectedTrack.tags[groupKey]) ? selectedTrack.tags[groupKey] : [];
+  const arrRaw = (selectedTrack && selectedTrack.tags && selectedTrack.tags[groupKey]) ? selectedTrack.tags[groupKey] : [];
+  const arr = _normalizeTagArray(arrRaw);
   return (arr && arr.length) ? String(arr[0]) : '';
 }
 
@@ -58,7 +75,8 @@ function setVkTagValue(groupKey, value) {
   if (!Array.isArray(arr)) arr = [];
 
   const v = (value == null) ? '' : String(value);
-  if (!v) {
+  if (!v || _isUnknownTagValue(v)) {
+    // Unknown is represented by "no selection".
     selectedTrack.tags[groupKey] = [];
     return;
   }
@@ -67,6 +85,7 @@ function setVkTagValue(groupKey, value) {
   const rest = [];
   for (const x of arr) {
     const xs = String(x);
+    if (_isUnknownTagValue(xs)) continue;
     if (xs.toLowerCase() === vLow) continue;
     rest.push(xs);
   }
@@ -150,7 +169,8 @@ function rebuildVirtualKey(forceNewSn=false) {
 }
 
 function labelForVkOption(v) {
-  if (String(v) === 'unk' || String(v).toLowerCase() === 'unknown') return '---- (unknown)';
+  // Backward compat: if an older catalog still contains 'unk' in the vocab, hide it.
+  if (_isUnknownTagValue(v)) return '';
   return String(v);
 }
 
@@ -177,15 +197,15 @@ function buildSelectOptions(selectEl, values, placeholder='—', labelFn=null) {
 function renderVirtualKeyBuilder() {
   if (!selectedTrack || !vocab) return;
 
-  const moodOpts = (vocab.tag_vocab && vocab.tag_vocab[VK_GROUPS.mood]) ? vocab.tag_vocab[VK_GROUPS.mood] : [];
-  const ctxOpts = (vocab.tag_vocab && vocab.tag_vocab[VK_GROUPS.context]) ? vocab.tag_vocab[VK_GROUPS.context] : [];
-  const instOpts = (vocab.tag_vocab && vocab.tag_vocab[VK_GROUPS.instrument]) ? vocab.tag_vocab[VK_GROUPS.instrument] : [];
-  const styleOpts = (vocab.tag_vocab && vocab.tag_vocab[VK_GROUPS.style]) ? vocab.tag_vocab[VK_GROUPS.style] : [];
+  const moodOpts = _normalizeTagArray((vocab.tag_vocab && vocab.tag_vocab[VK_GROUPS.mood]) ? vocab.tag_vocab[VK_GROUPS.mood] : []);
+  const ctxOpts = _normalizeTagArray((vocab.tag_vocab && vocab.tag_vocab[VK_GROUPS.context]) ? vocab.tag_vocab[VK_GROUPS.context] : []);
+  const instOpts = _normalizeTagArray((vocab.tag_vocab && vocab.tag_vocab[VK_GROUPS.instrument]) ? vocab.tag_vocab[VK_GROUPS.instrument] : []);
+  const styleOpts = _normalizeTagArray((vocab.tag_vocab && vocab.tag_vocab[VK_GROUPS.style]) ? vocab.tag_vocab[VK_GROUPS.style] : []);
 
-  buildSelectOptions(el('vkMoodSelect'), moodOpts, '—', labelForVkOption);
-  buildSelectOptions(el('vkContextSelect'), ctxOpts, '—', labelForVkOption);
-  buildSelectOptions(el('vkInstrumentSelect'), instOpts, '—', labelForVkOption);
-  buildSelectOptions(el('vkStyleSelect'), styleOpts, '—', labelForVkOption);
+  buildSelectOptions(el('vkMoodSelect'), moodOpts, '-', null);
+  buildSelectOptions(el('vkContextSelect'), ctxOpts, '-', null);
+  buildSelectOptions(el('vkInstrumentSelect'), instOpts, '-', null);
+  buildSelectOptions(el('vkStyleSelect'), styleOpts, '-', null);
 
   // Try to initialize from existing tags
   const curMood = getVkTagValue(VK_GROUPS.mood);
@@ -550,13 +570,19 @@ function renderTagsEditor() {
   te.innerHTML = '';
 
   const tag_vocab = vocab.tag_vocab || {};
-  for (const [group, values] of Object.entries(tag_vocab)) {
+  for (const [group, valuesRaw] of Object.entries(tag_vocab)) {
     const isProtected = VK_PROTECTED_GROUPS.has(group);
-    const cur = (selectedTrack.tags && selectedTrack.tags[group]) ? selectedTrack.tags[group] : [];
+
+    // UI should not show explicit unknown values; unknown is represented by 'no selection'.
+    const values = _normalizeTagArray(valuesRaw || []);
+
+    const curRaw = (selectedTrack.tags && selectedTrack.tags[group]) ? selectedTrack.tags[group] : [];
+    const cur = _normalizeTagArray(curRaw || []);
 
     const box = document.createElement('div');
     box.className = 'card';
     box.style.marginBottom = '10px';
+
     const title = document.createElement('div');
     title.className = 'card-title';
     title.textContent = group;
@@ -566,7 +592,7 @@ function renderTagsEditor() {
       const hint = document.createElement('div');
       hint.className = 'muted tiny';
       hint.style.marginTop = '4px';
-      hint.textContent = 'Primary value for Virtual key is chosen above. You can multi-select additional values here.';
+      hint.textContent = 'Virtual key uses the selector above. No checkbox selected means unknown.';
       box.appendChild(hint);
     }
 
@@ -575,54 +601,69 @@ function renderTagsEditor() {
     grid.style.gridTemplateColumns = 'repeat(3, minmax(0, 1fr))';
     grid.style.gap = '6px';
 
-    const primary = (isProtected ? getVkTagValue(group) : '');
+    // Primary is controlled by VK select; if it is empty, treat as unknown.
+    let primary = '';
+    if (isProtected) {
+      const selId = VK_SELECT_BY_GROUP[group];
+      const sel = selId ? el(selId) : null;
+      primary = sel ? String(sel.value || '') : getVkTagValue(group);
+      if (_isUnknownTagValue(primary)) primary = '';
+    }
 
     for (const v of values) {
       const lbl = document.createElement('label');
       lbl.className = 'inline tiny';
+
       const chk = document.createElement('input');
       chk.type = 'checkbox';
       chk.checked = cur.includes(v);
+
       chk.onchange = () => {
         if (!selectedTrack) return;
         selectedTrack.tags = selectedTrack.tags || {};
-        let arr = selectedTrack.tags[group];
-        if (!Array.isArray(arr)) arr = [];
-        // Work with strings only
-        arr = arr.map(x => String(x));
+
+        let arr = _normalizeTagArray(selectedTrack.tags[group] || []);
+        const beforeLen = arr.length;
 
         const vs = String(v);
-        const idx = arr.indexOf(vs);
-
         if (chk.checked) {
-          if (idx < 0) arr.push(vs);
+          if (!arr.includes(vs)) arr.push(vs);
         } else {
-          if (idx >= 0) arr.splice(idx, 1);
+          arr = arr.filter(x => x !== vs);
         }
 
-        // For VK component groups, keep Virtual-key behavior intact:
-        // - VK reads ONLY the first value.
-        // - If the first value is removed, shift primary to the next available value,
-        //   otherwise fall back to 'unk' if it exists.
         if (isProtected) {
-          const removedPrimary = (idx === 0 && !chk.checked);
-          if (removedPrimary) {
-            let newPrimary = (arr.length > 0) ? String(arr[0]) : '';
-            if (!newPrimary) {
-              const opts = (tag_vocab[group] || []).map(x => String(x));
-              if (opts.includes('unk')) {
-                newPrimary = 'unk';
-                arr = ['unk'];
-              }
-            }
+          const selId = VK_SELECT_BY_GROUP[group];
+          const sel = selId ? el(selId) : null;
+          let vkVal = sel ? String(sel.value || '') : getVkTagValue(group);
+          if (_isUnknownTagValue(vkVal)) vkVal = '';
 
-            // Update the VK select UI to reflect the new primary.
-            const selId = VK_SELECT_BY_GROUP[group];
-            if (selId && el(selId)) {
-              el(selId).value = newPrimary;
-            }
+          // If user cleared all multi-choice selections, VK should become None too.
+          if (arr.length === 0) {
+            selectedTrack.tags[group] = [];
+            if (sel) sel.value = '';
+            rebuildVirtualKey(false);
+            renderTagsEditor();
+            renderList();
+            return;
+          }
 
-            // Rebuild key (preserves extra tag values via setVkTagValue).
+          // From 0 -> 1 selection: auto-set VK primary to that value.
+          if (beforeLen === 0 && arr.length === 1) {
+            vkVal = arr[0];
+            if (sel) sel.value = vkVal;
+            selectedTrack.tags[group] = [vkVal];
+            rebuildVirtualKey(false);
+            renderTagsEditor();
+            renderList();
+            return;
+          }
+
+          // If VK is empty or no longer selected, pick a new primary.
+          if (!vkVal || !arr.includes(vkVal)) {
+            vkVal = arr[0];
+            if (sel) sel.value = vkVal;
+            arr = [vkVal, ...arr.filter(x => x !== vkVal)];
             selectedTrack.tags[group] = arr;
             rebuildVirtualKey(false);
             renderTagsEditor();
@@ -630,34 +671,30 @@ function renderTagsEditor() {
             return;
           }
 
-          // If this group somehow becomes empty, re-seed with 'unk' (if available).
-          if (arr.length === 0) {
-            const opts = (tag_vocab[group] || []).map(x => String(x));
-            if (opts.includes('unk')) {
-              arr = ['unk'];
-              const selId = VK_SELECT_BY_GROUP[group];
-              if (selId && el(selId)) {
-                el(selId).value = 'unk';
-              }
-              selectedTrack.tags[group] = arr;
-              rebuildVirtualKey(false);
-              renderTagsEditor();
-              renderList();
-              return;
-            }
+          // VK exists and is selected: keep it as the first element.
+          if (arr[0] !== vkVal) {
+            arr = [vkVal, ...arr.filter(x => x !== vkVal)];
           }
+
+          selectedTrack.tags[group] = arr;
+          setDirty(true);
+          renderList();
+          return;
         }
 
+        // Non-protected groups
         selectedTrack.tags[group] = arr;
         setDirty(true);
         renderList();
       };
+
       lbl.appendChild(chk);
+
       const span = document.createElement('span');
       span.textContent = v;
       lbl.appendChild(span);
 
-      if (isProtected && String(v) === primary) {
+      if (isProtected && primary && String(v) === primary) {
         const badge = document.createElement('span');
         badge.className = 'muted tiny';
         badge.style.marginLeft = '6px';
@@ -672,6 +709,7 @@ function renderTagsEditor() {
     te.appendChild(box);
   }
 }
+
 
 // ----- Missing-track actions
 async function locateSelectedTrackFile() {
@@ -729,6 +767,9 @@ function wireDetailInputs() {
     sel.addEventListener('change', () => {
       if (!selectedTrack) return;
       rebuildVirtualKey(false);
+      // Keep multi-choice tags in sync with VK selection.
+      renderTagsEditor();
+      renderList();
     });
   });
   const regen = el('vkRegenBtn');
@@ -736,6 +777,8 @@ function wireDetailInputs() {
     regen.addEventListener('click', () => {
       if (!selectedTrack) return;
       rebuildVirtualKey(true);
+      renderTagsEditor();
+      renderList();
     });
   }
 

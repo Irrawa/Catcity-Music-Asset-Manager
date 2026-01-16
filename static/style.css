@@ -278,11 +278,21 @@ button.danger:hover {
 }
 
 .cluster-track-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: 20% 1fr;
   align-items: flex-start;
   gap: 10px;
   padding: 8px 6px;
   border-radius: 10px;
+}
+
+.cluster-track-row input[type="checkbox"] {
+  justify-self: center;
+  margin-top: 2px;
+}
+
+.cluster-track-row > div {
+  min-width: 0;
 }
 
 .cluster-track-row:hover {
@@ -293,6 +303,8 @@ button.danger:hover {
   font-size: 12px;
   color: var(--muted);
   margin-top: 2px;
+
+  overflow-wrap: anywhere;
 }
 
 .cluster-row {
