@@ -1,0 +1,95 @@
+{
+  "schema_version": 2,
+  "created_at": "2026-01-16T00:00:00Z",
+  "updated_at": "2026-01-16T00:00:00Z",
+  "raw_music_directory": "",
+  "vocab": {
+    "primary_roles": [
+      "menu",
+      "exploration",
+      "town",
+      "combat",
+      "boss",
+      "cutscene",
+      "ending",
+      "ambient"
+    ],
+    "tag_vocab": {
+      "moods": [
+        "calm",
+        "warm",
+        "dark",
+        "sad",
+        "tense",
+        "mysterious",
+        "hopeful",
+        "epic"
+      ],
+      "usable_in_contexts": [
+        "menu",
+        "exploration",
+        "town",
+        "combat",
+        "boss",
+        "cutscene",
+        "ending"
+      ],
+      "instruments": [
+        "orchestral",
+        "piano",
+        "strings",
+        "synth",
+        "guitar",
+        "percussion"
+      ],
+      "styles": [
+        "fantasy",
+        "sci_fi",
+        "modern",
+        "retro",
+        "chiptune",
+        "ambient"
+      ]
+    },
+    "scale_defs": {
+      "energy": {
+        "min": 0,
+        "max": 5,
+        "default": 0
+      },
+      "darkness": {
+        "min": 0,
+        "max": 5,
+        "default": 0
+      },
+      "emotional_weight": {
+        "min": 0,
+        "max": 5,
+        "default": 0
+      },
+      "tension": {
+        "min": 0,
+        "max": 5,
+        "default": 0
+      },
+      "brightness": {
+        "min": 0,
+        "max": 5,
+        "default": 0
+      }
+    },
+    "scale_names": [
+      "energy",
+      "darkness",
+      "emotional_weight",
+      "tension",
+      "brightness"
+    ]
+  },
+  "aliases": {
+    "melancholic": "sad",
+    "spooky": "mysterious"
+  },
+  "tracks": [],
+  "clusters": []
+}

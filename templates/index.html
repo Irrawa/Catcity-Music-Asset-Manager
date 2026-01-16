@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{ app_title }}</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div class="topbar">
+    <div class="topbar-left">
+      <div class="title">Music Catalog Manager</div>
+      <div id="status" class="muted">Loading...</div>
+    </div>
+    <div class="topbar-right">
+      <button id="changeConfigBtn" class="secondary">Change Library...</button>
+      <button id="rescanBtn" class="secondary">Rescan</button>
+      <button id="clustersBtn" class="secondary">Clusters...</button>
+      <button id="saveBtn" disabled>Save</button>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="panel left">
+      <div class="filters">
+        <input id="searchInput" type="text" placeholder="Search (virtual key, notes, path...)" />
+
+        <div class="filter-row">
+          <select id="roleFilter">
+            <option value="">All roles</option>
+          </select>
+          <label class="inline"><input id="loopableFilter" type="checkbox" /> loopable</label>
+        </div>
+
+        <div class="filter-row">
+          <label>Length (sec)</label>
+          <input id="lenMin" type="number" min="0" placeholder="min" />
+          <input id="lenMax" type="number" min="0" placeholder="max" />
+        </div>
+
+        <div id="scaleFilters"></div>
+
+        <div class="filter-row">
+          <select id="tagGroupSelect"></select>
+          <select id="tagValueSelect">
+            <option value="">Any tag</option>
+          </select>
+        </div>
+
+        <div class="muted tiny" id="filterHint"></div>
+      </div>
+
+      <div class="list" id="trackList"></div>
+    </div>
+
+    <div class="panel right">
+      <div id="emptyState" class="muted">Select a track to edit metadata.</div>
+
+      <div id="detail" style="display:none;">
+        <div class="detail-header">
+          <div>
+            <div class="vk" id="dVirtualKey"></div>
+            <div class="muted tiny" id="dPath"></div>
+            <div class="muted tiny" id="dCluster"></div>
+          </div>
+          <div class="badge" id="dMissing"></div>
+        </div>
+
+        <div id="missingActions" class="card" style="display:none; margin: 10px 0; border-left: 4px solid #ef4444;">
+          <div class="row" style="justify-content: space-between; align-items: center;">
+            <div>
+              <div class="card-title" style="margin:0; color:#ef4444;">Missing track file</div>
+              <div class="muted tiny" style="margin-top:4px;">The catalog entry is kept, but the audio file cannot be found in the raw music directory.</div>
+            </div>
+            <div class="row" style="gap: 8px;">
+              <button id="locateBtn" type="button">Locate file...</button>
+              <button id="removeTrackBtn" class="danger" type="button">Remove track</button>
+            </div>
+          </div>
+          <div class="muted tiny" id="missingHint" style="margin-top:8px;"></div>
+        </div>
+
+        <div class="audio">
+          <audio id="player" controls preload="none"></audio>
+          <div class="row gap">
+            <label class="inline"><input id="abLoopToggle" type="checkbox" /> A/B loop</label>
+            <label class="inline">A <input id="abA" type="number" min="0" step="0.1" class="small" /></label>
+            <label class="inline">B <input id="abB" type="number" min="0" step="0.1" class="small" /></label>
+          </div>
+        </div>
+
+        <div class="card" style="margin: 10px 0;">
+          <div class="row" style="justify-content: space-between; align-items: center;">
+            <div>
+              <div class="card-title" style="margin:0;">Virtual key</div>
+              <div class="muted tiny" style="margin-top: 4px;">Auto-generated as <span class="muted">mood_context_instrument_style_sn</span>. Choose components below.</div>
+            </div>
+            <button id="vkRegenBtn" class="secondary" type="button">Regenerate SN</button>
+          </div>
+
+          <div class="grid2" style="margin-top: 10px;">
+            <label>mood<select id="vkMoodSelect"></select></label>
+            <label>context<select id="vkContextSelect"></select></label>
+            <label>instrument<select id="vkInstrumentSelect"></select></label>
+            <label>style<select id="vkStyleSelect"></select></label>
+            <label style="grid-column: 1 / -1;">virtual_key (auto)
+              <input id="virtualKeyInput" type="text" disabled />
+            </label>
+          </div>
+        </div>
+
+        <div class="grid2">
+          <label>
+            Primary role
+            <select id="primaryRoleSelect"></select>
+          </label>
+
+          <label>
+            BPM (optional)
+            <input id="bpmInput" type="number" min="0" step="1" />
+          </label>
+
+          <label>
+            Length (sec)
+            <input id="lengthInput" type="number" min="0" step="0.1" disabled />
+          </label>
+
+          <div></div>
+        </div>
+
+        <div class="card">
+          <div class="row" style="justify-content: space-between; align-items: center;">
+            <div class="card-title" style="margin:0;">Scales</div>
+            <button id="manageScalesBtn" class="secondary" type="button">Manage Scales...</button>
+          </div>
+          <div class="muted tiny" style="margin-top:6px;">Numeric ratings per track. Scale ranges are configurable.</div>
+          <div id="scalesEditor" class="grid2"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Tags</div>
+          <div id="tagsEditor"></div>
+          <div class="row" style="margin-top: 8px; gap: 8px;">
+            <button id="addTagBtn" class="secondary" type="button">Add Tag Value...</button>
+            <button id="manageTagsBtn" class="secondary" type="button">Manage Tags...</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Loop info</div>
+          <div class="grid2">
+            <label class="inline"><input id="canLoop" type="checkbox" /> can loop</label>
+            <div></div>
+
+            <label>loop_start_sec<input id="loopStart" type="number" min="0" step="0.1" /></label>
+            <label>loop_end_sec<input id="loopEnd" type="number" min="0" step="0.1" /></label>
+            <label>intro_sec<input id="introSec" type="number" min="0" step="0.1" /></label>
+            <label>outro_sec<input id="outroSec" type="number" min="0" step="0.1" /></label>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Licensing</div>
+          <div class="grid2">
+            <label>source_pack<input id="licSource" type="text" /></label>
+            <label>license_type<input id="licType" type="text" /></label>
+            <label>proof_url_or_file<input id="licProof" type="text" /></label>
+            <label class="inline"><input id="licAttrReq" type="checkbox" /> attribution_required</label>
+          </div>
+          <label style="margin-top: 8px;">attribution_text<textarea id="licAttrText" rows="2"></textarea></label>
+        </div>
+
+        <label>
+          Notes
+          <textarea id="notesInput" rows="4" placeholder="How would you use this track? Any warnings? Mood notes?"></textarea>
+        </label>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal" class="modal" style="display:none;">
+    <div class="modal-content">
+      <div class="modal-title">Add a tag value</div>
+      <div class="grid2">
+        <label>
+          Tag group
+          <select id="modalTagGroup"></select>
+        </label>
+        <label>
+          New value
+          <input id="modalTagValue" type="text" placeholder="e.g. melancholic" />
+        </label>
+      </div>
+      <div class="row" style="justify-content:flex-end; margin-top: 10px;">
+        <button id="modalCancel" class="secondary">Cancel</button>
+        <button id="modalOk">Add</button>
+      </div>
+      <div class="muted tiny" style="margin-top: 8px;">
+        Tip: keep wording consistent. If needed, add an alias later.
+      </div>
+    </div>
+  </div>
+
+
+
+  <div id="tagAdminModal" class="modal" style="display:none;">
+    <div class="modal-content" style="max-width: 720px;">
+      <div class="modal-title">Manage tag groups and values</div>
+
+      <div class="card" style="margin-top: 10px;">
+        <div class="card-title">Tag groups</div>
+        <div class="row" style="gap: 8px; align-items: flex-end;">
+          <label style="flex:1;">
+            New group name
+            <input id="tagGroupNewName" type="text" placeholder="e.g. instruments, moods, locations" />
+          </label>
+          <button id="tagGroupAddBtn" type="button">Add group</button>
+        </div>
+        <div class="muted tiny" style="margin-top:6px;">Deleting a group removes it from the catalog and from all tracks.</div>
+        <div id="tagGroupList" style="margin-top:10px;"></div>
+      </div>
+
+      <div class="card" style="margin-top: 10px;">
+        <div class="card-title">Tag values</div>
+        <div class="row" style="gap: 8px; align-items: flex-end;">
+          <label style="flex:1;">
+            Group
+            <select id="tagValueGroupSelect"></select>
+          </label>
+        </div>
+        <div class="muted tiny" style="margin-top:6px;">Deleting a value removes it from the vocabulary and from all tracks.</div>
+        <div id="tagValueList" style="margin-top:10px;"></div>
+      </div>
+
+      <div class="row" style="justify-content:flex-end; margin-top: 10px;">
+        <button id="tagAdminCloseBtn" class="secondary" type="button">Close</button>
+      </div>
+
+    </div>
+  </div>
+
+
+
+
+  <div id="clusterAdminModal" class="modal" style="display:none;">
+    <div class="modal-content cluster-modal">
+      <div class="cluster-modal-header">
+        <div>
+          <div class="modal-title" style="margin:0;">Manage clusters</div>
+          <div class="muted tiny" style="margin-top: 6px;">Clusters group near-identical tracks (format or loop variants). Merging copies the target cluster's shared metadata (BPM, tags, scales, licensing) onto the merged tracks.</div>
+        </div>
+        <button id="clusterAdminCloseBtnTop" class="secondary" type="button">Close</button>
+      </div>
+
+      <div class="cluster-modal-body">
+        <div class="card" style="margin-top: 10px;">
+          <div class="card-title">Merge clusters</div>
+          <div class="grid2">
+            <label>
+              Target (keep)
+              <select id="clusterTargetSelect"></select>
+            </label>
+            <label>
+              Source (merge into target)
+              <select id="clusterSourceSelect"></select>
+            </label>
+          </div>
+          <div class="row" style="justify-content:flex-end; margin-top: 10px; gap: 8px; flex-wrap: wrap;">
+            <button id="clusterMergeBtn" type="button">Merge</button>
+          </div>
+          <div class="muted tiny" id="clusterMergeHint" style="margin-top:6px;"></div>
+        </div>
+
+        <div class="card" style="margin-top: 10px;">
+          <div class="card-title">Clusters</div>
+          <div class="muted tiny" style="margin-top:6px;">Tip: click a cluster row to set it as Target. Use the buttons on the right to set Target/Source quickly. Scroll inside this list when there are many clusters.</div>
+          <div id="clusterList" style="margin-top:10px;"></div>
+        </div>
+      </div>
+
+      <div class="cluster-modal-footer">
+        <button id="clusterAdminCloseBtn" class="secondary" type="button">Close</button>
+      </div>
+    </div>
+  </div>
+  <div id="scaleAdminModal" class="modal" style="display:none;">
+    <div class="modal-content" style="max-width: 980px;">
+      <div class="modal-title">Manage scales</div>
+
+      <div class="card" style="margin-top: 10px;">
+        <div class="card-title">Add a new scale</div>
+        <div class="grid2">
+          <label>
+            Name
+            <input id="scaleNewName" type="text" placeholder="e.g. intensity, eeriness" />
+          </label>
+          <div class="row" style="gap: 10px; align-items: flex-end;">
+            <label style="flex:1;">
+              Min
+              <input id="scaleNewMin" type="number" step="1" value="0" />
+            </label>
+            <label style="flex:1;">
+              Max
+              <input id="scaleNewMax" type="number" step="1" value="5" />
+            </label>
+            <label style="flex:1;">
+              Default
+              <input id="scaleNewDefault" type="number" step="1" value="0" />
+            </label>
+            <button id="scaleAddBtn" type="button">Add</button>
+          </div>
+        </div>
+        <div class="muted tiny" style="margin-top:6px;">Adding a scale adds it to every track with the default value.</div>
+      </div>
+
+      <div class="card" style="margin-top: 10px;">
+        <div class="card-title">Existing scales</div>
+        <div class="muted tiny" style="margin-top:6px;">Editing min/max clamps all tracks to the new range.</div>
+        <div id="scaleList" style="margin-top:10px;"></div>
+      </div>
+
+      <div class="row" style="justify-content:flex-end; margin-top: 10px;">
+        <button id="scaleAdminCloseBtn" class="secondary" type="button">Close</button>
+      </div>
+    </div>
+  </div>
+  <script src="/static/app.js"></script>
+</body>
+</html>

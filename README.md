@@ -1,2 +1,116 @@
-# Catcity-Music-Asset-Manager
-This is a tool to manage music assets for a game.
+# Music Catalog Manager (Local Web App)
+
+A local-first, Python-based **music catalog manager** for game development.
+It scans a messy raw music directory, builds a metadata catalog JSON, and provides a browser UI to **search, audition, and edit** track metadata.
+
+## Features
+
+- **No duplication / no renaming** of raw music files
+- Stable identity per track: **track_id (UUID)**
+- File relink: **sha1 + file_size + modified_time**
+- Multi-dimensional metadata:
+  - primary_role (single)
+  - **tags** (multi-select)
+  - **scales** (numeric sliders; configurable ranges)
+  - loop info, notes, licensing fields
+- Rescan summary: new / updated / relinked / duplicates / missing
+- Missing-file recovery:
+  - Auto relink by **SHA-1 fingerprint** (best case)
+  - Fallback auto relink by **filename + parent folder name** (when bytes change)
+  - Manual actions in the UI: **Locate file...** / **Remove track**
+- Browser UI with:
+  - search & filters
+  - detail panel for edits
+  - audio player + optional **A/B loop preview**
+  - keyboard shortcuts: Up/Down navigate list, Space play/pause, Ctrl+S save
+  - tag vocab management (add/delete tag groups, delete tag values)
+  - scale management (add/delete scales, set min/max/default)
+  - cluster management (merge one cluster into another; copies shared meta)
+
+## Quick Start
+
+### 1) Install dependencies
+
+```bash
+cd music_catalog_manager
+python -m venv .venv
+# Windows:
+.venv\Scripts\activate
+# macOS/Linux:
+source .venv/bin/activate
+
+pip install -r requirements.txt
+```
+
+### 2) Run the server
+
+```bash
+uvicorn app.main:app --reload --port 8000
+```
+
+Open:
+- `http://127.0.0.1:8000/setup`
+
+Enter:
+- **RawMusicDirectory**: your raw audio root folder (nested subfolders are OK)
+- **CatalogFile**: where you want the JSON catalog stored (created if missing)
+
+Click **Rescan** to import tracks.
+
+## How the catalog works
+
+### Track identity (why UUID)
+- Filenames and paths change; a UUID stays stable and is what your project should reference.
+
+### Fingerprinting (why sha1 + size + mtime)
+- sha1 is the robust identity of content.
+- file_size + modified_time allow reusing existing sha1 when a file hasn’t changed.
+- If a file moves, the app can **relink** the catalog entry to the new path by matching SHA-1.
+- If fingerprint matching fails (e.g., the audio file’s bytes were rewritten), the scanner tries a safer fallback: **filename + parent folder name**. If that is still not enough, the track is marked as missing and you can use **Locate file...** to relink.
+
+### Clusters (grouping near-identical tracks)
+- Each track belongs to a **cluster** (cluster_id).
+- When a new catalog is created, each imported file starts in its **own cluster**, named after its initial virtual_key.
+- In the UI, **Clusters...** lets you merge a source cluster into a target cluster. On merge, the app copies the target cluster’s shared fields (tags, scales, bpm, licensing) to moved tracks, keeps per-file fields (path/format/loop), and regenerates virtual keys to avoid collisions.
+
+### Sync rules
+- New discovered file with unseen sha1 → create new entry.
+- Discovered sha1 matches existing canonical track:
+  - If canonical path is missing on disk → relink canonical to discovered path.
+  - Else → create a duplicate entry with `duplicate_of = canonical_track_id`.
+- Tracks not found during scan remain with `missing_file = true`.
+- For missing tracks, you can use **Locate file...** in the detail panel to relink manually, or **Remove track** to delete the catalog entry (audio files on disk are never deleted).
+
+### Tags & scales (why not single-choice)
+Music is ambiguous. This app treats metadata as **affordances**:
+- `primary_role` gives a default anchor.
+- `tags` capture multiple valid moods/contexts.
+- `scales` reduce team bias vs arguing over words. Scales are configurable (min/max/default) so teams can use 0-3, 1-10, etc.
+
+## File Layout
+
+```
+music_catalog_manager/
+  app/
+    main.py
+    catalog.py
+    models.py
+    config.py
+    utils.py
+  templates/
+    setup.html
+    index.html
+  static/
+    app.js
+    style.css
+  sample/
+    catalog_sample.json
+  requirements.txt
+  README.md
+```
+
+## Notes & limitations
+- Local-only: no uploading; audio files are served from RawMusicDirectory through the app.
+- Browser audio format support depends on your browser (MP3/OGG/WAV support varies).
+- Single-user editing assumed (catalog JSON isn’t multi-writer safe).
+
