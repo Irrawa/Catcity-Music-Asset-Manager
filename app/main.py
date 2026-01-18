@@ -74,12 +74,8 @@ def _pick_identity_value(track: Track, group: str, st: State) -> str:
     """Pick the canonical identity value for a VK component group."""
     if track.tags and group in track.tags and track.tags[group]:
         return str(track.tags[group][0])
-    # fallback to vocab option
-    if st.catalog and st.catalog.vocab and st.catalog.vocab.tag_vocab:
-        opts = st.catalog.vocab.tag_vocab.get(group, [])
-        if opts:
-            return str(opts[0])
-    return ''
+    # Unknown is represented by selecting nothing.
+    return ""
 
 
 def _get_cluster_tracks(st: State, cluster_id: UUID) -> list[Track]:

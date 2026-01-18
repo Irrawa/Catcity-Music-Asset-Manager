@@ -25,44 +25,106 @@ def utc_now_iso() -> str:
     return datetime.utcnow().isoformat() + "Z"
 
 
+# Default role vocabulary. These are kept as a runtime default for convenience,
+# but can be omitted from the on-disk JSON when unchanged to reduce metadata noise.
+DEFAULT_PRIMARY_ROLES: List[str] = [
+    "menu",
+    "exploration",
+    "town",
+    "combat",
+    "boss",
+    "cutscene",
+    "ending",
+    "ambient",
+]
+
+
 def default_vocab() -> Vocab:
     return Vocab(
-        primary_roles=[
-            "menu",
-            "exploration",
-            "town",
-            "combat",
-            "boss",
-            "cutscene",
-            "ending",
-            "ambient",
-        ],
+        primary_roles=list(DEFAULT_PRIMARY_ROLES),
         tag_vocab={
-            # Use an explicit "unknown" choice as the default for VK components.
-            # This avoids biasing the team toward the first mood/context/etc.
-            "moods": ["unk", "calm", "warm", "dark", "sad", "tense", "mysterious", "hopeful", "epic"],
+            # NOTE: "unknown" for VK components is represented by selecting nothing
+            # (empty list) in track.tags and "-" in the Virtual Key selector UI.
+            # We intentionally do NOT include an explicit "unk" option in vocab.
+            "moods": [
+                "calm",
+                "cozy",
+                "playful",
+                "lighthearted",
+                "hopeful",
+                "romantic",
+                "mysterious",
+                "suspenseful",
+                "tense",
+                "eerie",
+                "ominous",
+                "melancholic",
+                "heroic",
+                "triumphant",
+                "epic",
+            ],
+            "styles": [
+                "cinematic",
+                "orchestral",
+                "ambient",
+                "minimalist",
+                "electronic",
+                "synthwave",
+                "chiptune",
+                "lofi",
+                "rock",
+                "jazz",
+                "folk_acoustic",
+                "world",
+                "industrial",
+                "horror",
+            ],
             "usable_in_contexts": [
-                "unk",
                 "menu",
+                "loading",
                 "exploration",
+                "hub",
                 "town",
+                "puzzle",
+                "stealth",
                 "combat",
                 "boss",
                 "cutscene",
+                "game_over",
                 "ending",
+                "credits",
             ],
-            "instruments": ["unk", "orchestral", "piano", "strings", "synth", "guitar", "percussion"],
-            "styles": ["unk", "fantasy", "sci_fi", "modern", "retro", "chiptune", "ambient"],
+            "instruments": [
+                "orchestral",
+                "piano",
+                "strings",
+                "guitar",
+                "bass",
+                "percussion",
+                "synth",
+                "choir",
+                "ethnic",
+            ],
+            # Setting tags are *not* used in the Virtual Key combination.
+            "for_game_settings": [
+                "fantasy",
+                "sci-fi",
+                "modern",
+                "historical",
+                "post-apocalyptic",
+                "cyberpunk",
+                "steampunk",
+            ],
         },
         scale_defs={
             "energy": ScaleDef(min=0, max=5, default=0),
-            "darkness": ScaleDef(min=0, max=5, default=0),
-            "emotional_weight": ScaleDef(min=0, max=5, default=0),
+            "details": ScaleDef(min=0, max=5, default=0),
             "tension": ScaleDef(min=0, max=5, default=0),
-            "brightness": ScaleDef(min=0, max=5, default=0),
+            "diversity": ScaleDef(min=0, max=5, default=0),
+            "users_liking": ScaleDef(min=0, max=5, default=0),
         },
-        # Backward compat (kept in file for older UI/tools); derived from scale_defs.
-        scale_names=["energy", "darkness", "emotional_weight", "tension", "brightness"],
+        # scale_names is derived from scale_defs (ordering hint) and may be omitted on disk.
+        scale_names=["energy", "details", "tension", "diversity", "users_liking"],
     )
 
 
@@ -77,11 +139,13 @@ def _ensure_vocab_scales(vocab: Vocab) -> None:
         vocab.scale_names = list(vocab.scale_defs.keys())
 
 
-def _ensure_vocab_unknown_options(vocab: Vocab) -> None:
-    """Ensure VK component tag groups contain an explicit unknown option ('unk').
+def _strip_vocab_unknown_options(vocab: Vocab) -> None:
+    """Remove explicit unknown options (e.g. 'unk') from VK vocab groups.
 
-    This is important for team workflows where a track may not be confidently
-    categorized yet; defaulting to the first "real" option causes bias.
+    In this version, "unknown" is represented by selecting nothing.
+    We keep this as a *non-destructive* cleanup:
+    - Removes 'unk'/'unknown' tokens if present.
+    - Preserves ordering for the remaining items.
     """
     if not getattr(vocab, 'tag_vocab', None):
         vocab.tag_vocab = {}
@@ -90,15 +154,20 @@ def _ensure_vocab_unknown_options(vocab: Vocab) -> None:
         vals = vocab.tag_vocab.get(group)
         if vals is None:
             continue
-        vals_str = [str(v) for v in vals]
-        if "unk" not in vals_str:
-            vocab.tag_vocab[group] = ["unk"] + vals_str
-        else:
-            # Move 'unk' to the front for better UX.
-            idx = vals_str.index("unk")
-            if idx != 0:
-                vals_str.pop(idx)
-                vocab.tag_vocab[group] = ["unk"] + vals_str
+        cleaned: List[str] = []
+        seen: Set[str] = set()
+        for v in vals:
+            s = str(v).strip()
+            if not s:
+                continue
+            low = s.lower()
+            if low in ("unk", "unknown", "none", "-"):
+                continue
+            if low in seen:
+                continue
+            seen.add(low)
+            cleaned.append(s)
+        vocab.tag_vocab[group] = cleaned
 
 
 def ensure_catalog_clusters(catalog: Catalog) -> None:
@@ -148,10 +217,20 @@ def load_or_create_catalog(catalog_path: Path, raw_music_dir: Path) -> Catalog:
     if catalog_path.exists():
         data = json.loads(catalog_path.read_text(encoding="utf-8"))
         catalog = Catalog.model_validate(data)
-        if not catalog.vocab.primary_roles:
+        # Older catalogs may have a missing/empty vocab. Do NOT treat an empty
+        # primary_roles list as "missing vocab" because we may intentionally
+        # omit primary_roles from disk for cleanliness.
+        if catalog.vocab is None or (
+            not getattr(catalog.vocab, "tag_vocab", None)
+            and not getattr(catalog.vocab, "scale_defs", None)
+            and not getattr(catalog.vocab, "scale_names", None)
+        ):
             catalog.vocab = default_vocab()
+        # Ensure role vocab is available at runtime (even if omitted on disk).
+        if not catalog.vocab.primary_roles:
+            catalog.vocab.primary_roles = list(DEFAULT_PRIMARY_ROLES)
         _ensure_vocab_scales(catalog.vocab)
-        _ensure_vocab_unknown_options(catalog.vocab)
+        _strip_vocab_unknown_options(catalog.vocab)
         if not catalog.raw_music_directory:
             catalog.raw_music_directory = str(raw_music_dir)
         # normalize / backfill per-track fields
@@ -185,13 +264,45 @@ def load_or_create_catalog(catalog_path: Path, raw_music_dir: Path) -> Catalog:
 def save_catalog_atomic(catalog: Catalog, catalog_path: Path) -> None:
     catalog.updated_at = utc_now_iso()
     tmp_path = catalog_path.with_suffix(catalog_path.suffix + ".tmp")
+    payload = catalog.model_dump(mode="json")
+    payload = _prune_redundant_catalog_fields(payload)
     # Use json.dumps to keep compatibility with pydantic versions where
     # model_dump_json does not expose ensure_ascii.
-    tmp_path.write_text(
-        json.dumps(catalog.model_dump(mode="json"), indent=2, ensure_ascii=False),
-        encoding="utf-8",
-    )
+    tmp_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
     tmp_path.replace(catalog_path)
+
+
+def _prune_redundant_catalog_fields(payload: Dict[str, object]) -> Dict[str, object]:
+    """Remove redundant/default fields from the on-disk JSON.
+
+    This keeps the file cleaner while preserving full behavior:
+    missing fields are always safe because we load through Pydantic models.
+    """
+    if not isinstance(payload, dict):
+        return payload
+
+    # Drop empty aliases dict.
+    if payload.get("aliases") == {}:
+        payload.pop("aliases", None)
+
+    vocab = payload.get("vocab")
+    if isinstance(vocab, dict):
+        # primary_roles: omit if unchanged default (or empty)
+        pr = vocab.get("primary_roles")
+        if pr == DEFAULT_PRIMARY_ROLES or pr == []:
+            vocab.pop("primary_roles", None)
+
+        # scale_names duplicates scale_defs keys; omit if redundant/empty.
+        sd = vocab.get("scale_defs")
+        sn = vocab.get("scale_names")
+        if isinstance(sn, list):
+            if not sn:
+                vocab.pop("scale_names", None)
+            elif isinstance(sd, dict):
+                if sn == list(sd.keys()):
+                    vocab.pop("scale_names", None)
+
+    return payload
 
 
 def _slugify(s: str) -> str:
@@ -332,13 +443,8 @@ def ensure_track_tags(track: Track, tag_vocab: Dict[str, List[str]]) -> None:
         if group not in track.tags:
             track.tags[group] = []
 
-    # For virtual-key component tag groups, default to an explicit unknown value
-    # instead of leaving empty (which can look like "first option" in some UIs).
-    for g in ("moods", "usable_in_contexts", "instruments", "styles"):
-        if g in track.tags and (not track.tags[g]):
-            vals = [str(v) for v in (tag_vocab.get(g) or [])]
-            if "unk" in vals:
-                track.tags[g] = ["unk"]
+    # Unknown for VK component tag groups is represented by selecting nothing.
+    # (Empty list in track.tags; "-" in the Virtual Key selector UI.)
 
 
 def normalize_tag_value(value: str, aliases: Dict[str, str]) -> str:
@@ -359,6 +465,10 @@ def normalize_track_tags(track: Track, vocab: Vocab, aliases: Dict[str, str]) ->
             nv = normalize_tag_value(str(v), aliases)
             if not nv:
                 continue
+            # Treat explicit unknown tokens as "no selection" for VK groups.
+            if group in ("moods", "usable_in_contexts", "instruments", "styles"):
+                if nv.lower() in ("unk", "unknown", "none", "-"):
+                    continue
             if nv.lower() in seen:
                 continue
             seen.add(nv.lower())
