@@ -87,6 +87,19 @@ Music is ambiguous. This app treats metadata as **affordances**:
 - `tags` capture multiple valid moods/contexts.
 - `scales` reduce team bias vs arguing over words. Scales are configurable (min/max/default) so teams can use 0-3, 1-10, etc.
 
+
+## Portability / cloud sync
+
+- The catalog stores `original_path` relative to RawMusicDirectory, so you can move the raw music folder or use the same catalog on another device.
+- When you select an existing catalog JSON + a new RawMusicDirectory, the app will automatically update `raw_music_directory` in the JSON to the newly selected path (atomic save).
+- If the catalog JSON is updated externally while the server is running (e.g., git pull / cloud sync), the server automatically reloads it on the next request so you see the latest version.
+
+You can run a quick portability self-test:
+
+```bash
+python scripts/portability_selftest.py
+```
+
 ## File Layout
 
 ```

@@ -217,6 +217,17 @@ def load_or_create_catalog(catalog_path: Path, raw_music_dir: Path) -> Catalog:
     if catalog_path.exists():
         data = json.loads(catalog_path.read_text(encoding="utf-8"))
         catalog = Catalog.model_validate(data)
+        # If the user relocated the raw music folder (e.g., moved the warehouse
+        # directory, or using the same catalog on a different device where the
+        # raw files live under a different absolute path), we must treat the
+        # newly selected RawMusicDirectory as the source of truth.
+        #
+        # Tracks store `original_path` relative to RawMusicDirectory, so
+        # updating the catalog's stored `raw_music_directory` allows the UI to
+        # keep showing all tracks and enables playback without requiring a
+        # rescan.
+        desired_raw_dir = str(raw_music_dir.resolve())
+        needs_save = False
         # Older catalogs may have a missing/empty vocab. Do NOT treat an empty
         # primary_roles list as "missing vocab" because we may intentionally
         # omit primary_roles from disk for cleanliness.
@@ -231,14 +242,19 @@ def load_or_create_catalog(catalog_path: Path, raw_music_dir: Path) -> Catalog:
             catalog.vocab.primary_roles = list(DEFAULT_PRIMARY_ROLES)
         _ensure_vocab_scales(catalog.vocab)
         _strip_vocab_unknown_options(catalog.vocab)
-        if not catalog.raw_music_directory:
-            catalog.raw_music_directory = str(raw_music_dir)
+        if catalog.raw_music_directory != desired_raw_dir:
+            catalog.raw_music_directory = desired_raw_dir
+            needs_save = True
         # normalize / backfill per-track fields
         for t in catalog.tracks:
             _ensure_track_path_hints(t)
             ensure_track_tags(t, catalog.vocab.tag_vocab)
             ensure_track_scales(t, catalog.vocab.scale_defs)
         ensure_catalog_clusters(catalog)
+        # Persist the raw directory update immediately so subsequent launches
+        # (or other tooling) won't be stuck with a stale raw_music_directory.
+        if needs_save:
+            save_catalog_atomic(catalog, catalog_path)
         return catalog
 
     # New catalog file: create with default schema, then immediately populate by scanning

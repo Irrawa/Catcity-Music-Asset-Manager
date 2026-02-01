@@ -197,6 +197,9 @@ class State:
         self.raw_dir: Optional[Path] = None
         self.catalog_path: Optional[Path] = None
         self.catalog: Optional[Catalog] = None
+        # Track on-disk catalog file identity so we can reload if the JSON is
+        # updated externally (e.g., git pull / cloud sync).
+        self._catalog_stat: Optional[tuple[int, int]] = None  # (mtime_ns, size)
 
     def is_configured(self) -> bool:
         return bool(self.cfg.raw_music_directory) and bool(self.cfg.catalog_file)
@@ -206,15 +209,56 @@ class State:
             self.raw_dir = None
             self.catalog_path = None
             self.catalog = None
+            self._catalog_stat = None
             return
         self.raw_dir = Path(self.cfg.raw_music_directory).expanduser().resolve()
         self.catalog_path = Path(self.cfg.catalog_file).expanduser().resolve()
         self.catalog = load_or_create_catalog(self.catalog_path, self.raw_dir)
+        self._refresh_catalog_stat()
 
     def save(self) -> None:
         if self.catalog is None or self.catalog_path is None:
             return
         save_catalog_atomic(self.catalog, self.catalog_path)
+        self._refresh_catalog_stat()
+
+    def _refresh_catalog_stat(self) -> None:
+        if self.catalog_path is None:
+            self._catalog_stat = None
+            return
+        try:
+            st = self.catalog_path.stat()
+            self._catalog_stat = (st.st_mtime_ns, st.st_size)
+        except Exception:
+            self._catalog_stat = None
+
+    def reload_if_changed(self) -> None:
+        """Reload catalog from disk if the selected JSON changed externally.
+
+        This is important for workflows like:
+        - Device A edits data1.json and pushes to cloud
+        - Device B pulls the updated JSON while the app is already running
+        Without a restart, the in-memory catalog would otherwise stay stale.
+
+        Non-goal: multi-user concurrent edits. We assume single-writer.
+        """
+        if self.catalog_path is None or self.raw_dir is None:
+            return
+        try:
+            st = self.catalog_path.stat()
+            cur = (st.st_mtime_ns, st.st_size)
+        except Exception:
+            return
+        if self._catalog_stat is None:
+            self._catalog_stat = cur
+            return
+        if cur != self._catalog_stat:
+            # Reload from disk. load_or_create_catalog will also refresh
+            # raw_music_directory inside the catalog to match the selected raw_dir.
+            self.catalog = load_or_create_catalog(self.catalog_path, self.raw_dir)
+            # load_or_create_catalog may update/save the JSON (e.g., raw_music_directory
+            # portability fix). Refresh stat after load to avoid repeated reloads.
+            self._refresh_catalog_stat()
 
 
 state = State()
@@ -229,6 +273,10 @@ def require_state() -> State:
     # Reload on demand if not loaded yet
     if state.catalog is None and state.is_configured():
         state.load()
+    # If the catalog JSON was updated externally (cloud sync / git pull),
+    # reload it automatically so users see the latest version.
+    if state.catalog is not None:
+        state.reload_if_changed()
     return state
 
 

@@ -6,12 +6,33 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+try:
+    from pydantic import ConfigDict  # pydantic v2
+except Exception:  # pragma: no cover
+    ConfigDict = None  # type: ignore
+
 
 def _utc_now_iso() -> str:
     return datetime.utcnow().isoformat() + "Z"
 
 
-class LoopInfo(BaseModel):
+
+class ModelBase(BaseModel):
+    """Project-wide BaseModel that ignores unknown fields for forward compatibility.
+
+    This ensures older app versions can still load newer catalog JSON files
+    (e.g., after a cloud sync) without wiping or recreating data.
+    """
+
+    if ConfigDict is not None:  # pydantic v2
+        model_config = ConfigDict(extra='ignore')
+    else:  # pydantic v1
+        class Config:  # type: ignore
+            extra = 'ignore'
+
+
+
+class LoopInfo(ModelBase):
     can_loop: bool = False
     loop_start_sec: Optional[float] = None
     loop_end_sec: Optional[float] = None
@@ -19,7 +40,7 @@ class LoopInfo(BaseModel):
     outro_sec: Optional[float] = None
 
 
-class LicensingInfo(BaseModel):
+class LicensingInfo(ModelBase):
     source_pack: str = ""
     license_type: str = ""
     proof_url_or_file: str = ""
@@ -27,13 +48,13 @@ class LicensingInfo(BaseModel):
     attribution_text: str = ""
 
 
-class TrackFingerprint(BaseModel):
+class TrackFingerprint(ModelBase):
     sha1: str
     file_size: int
     modified_time: float  # epoch seconds
 
 
-class Track(BaseModel):
+class Track(ModelBase):
     track_id: UUID
     # Cluster ID for grouping near-identical tracks (format / loop variants).
     # Optional for backward-compat; the app will auto-backfill on load.
@@ -67,7 +88,7 @@ class Track(BaseModel):
     duplicate_of: Optional[UUID] = None
 
 
-class ScaleDef(BaseModel):
+class ScaleDef(ModelBase):
     """Definition for a numeric scale."""
 
     min: int = 0
@@ -75,7 +96,7 @@ class ScaleDef(BaseModel):
     default: int = 0
 
 
-class Vocab(BaseModel):
+class Vocab(ModelBase):
     primary_roles: List[str] = Field(default_factory=list)
     tag_vocab: Dict[str, List[str]] = Field(default_factory=dict)
 
@@ -87,13 +108,13 @@ class Vocab(BaseModel):
     scale_names: List[str] = Field(default_factory=list)
 
 
-class Cluster(BaseModel):
+class Cluster(ModelBase):
     cluster_id: UUID
     name: str
     created_at: str = Field(default_factory=_utc_now_iso)
 
 
-class Catalog(BaseModel):
+class Catalog(ModelBase):
     # schema_version 2 introduces clusters.
     schema_version: int = 2
 
