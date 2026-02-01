@@ -193,15 +193,26 @@ TEMPLATES = Jinja2Templates(directory=str(PROJECT_ROOT / "templates"))
 
 class State:
     def __init__(self) -> None:
-        self.cfg: AppConfig = load_config()
+        # IMPORTANT: Do not auto-load any persisted config at server startup.
+        # Users may run the tool on different devices where previously saved
+        # paths don't exist (different drive letters / mount points). The app
+        # should start cleanly and require users to pick the raw music directory
+        # and catalog JSON for the current session.
+        self.cfg: AppConfig = AppConfig(raw_music_directory="", catalog_file="")
         self.raw_dir: Optional[Path] = None
         self.catalog_path: Optional[Path] = None
         self.catalog: Optional[Catalog] = None
         # Track on-disk catalog file identity so we can reload if the JSON is
         # updated externally (e.g., git pull / cloud sync).
         self._catalog_stat: Optional[tuple[int, int]] = None  # (mtime_ns, size)
+        # Whether the current process has been configured via /setup in THIS
+        # run. We intentionally require per-run selection.
+        self.session_configured: bool = False
 
     def is_configured(self) -> bool:
+        # Only treat as configured if user has configured in this run.
+        if not self.session_configured:
+            return False
         return bool(self.cfg.raw_music_directory) and bool(self.cfg.catalog_file)
 
     def load(self) -> None:
@@ -211,10 +222,19 @@ class State:
             self.catalog = None
             self._catalog_stat = None
             return
-        self.raw_dir = Path(self.cfg.raw_music_directory).expanduser().resolve()
-        self.catalog_path = Path(self.cfg.catalog_file).expanduser().resolve()
-        self.catalog = load_or_create_catalog(self.catalog_path, self.raw_dir)
-        self._refresh_catalog_stat()
+        try:
+            self.raw_dir = Path(self.cfg.raw_music_directory).expanduser().resolve()
+            self.catalog_path = Path(self.cfg.catalog_file).expanduser().resolve()
+            self.catalog = load_or_create_catalog(self.catalog_path, self.raw_dir)
+            self._refresh_catalog_stat()
+        except Exception:
+            # If anything goes wrong (e.g. invalid drive letter), don't crash
+            # the server process. Force user to re-configure.
+            self.raw_dir = None
+            self.catalog_path = None
+            self.catalog = None
+            self._catalog_stat = None
+            self.session_configured = False
 
     def save(self) -> None:
         if self.catalog is None or self.catalog_path is None:
@@ -262,7 +282,7 @@ class State:
 
 
 state = State()
-state.load()
+
 
 app = FastAPI(title="Music Catalog Manager", version="0.1.0")
 
@@ -282,7 +302,9 @@ def require_state() -> State:
 
 @app.get("/setup", response_class=HTMLResponse)
 def setup_page(request: Request) -> HTMLResponse:
-    cfg = load_config()
+    # We intentionally do not prefill paths from any persisted config.
+    # Users should reselect paths on each run to remain portable across devices.
+    cfg = AppConfig(raw_music_directory="", catalog_file="")
     return TEMPLATES.TemplateResponse(
         "setup.html",
         {
@@ -328,10 +350,13 @@ async def setup_submit(request: Request) -> RedirectResponse:
         return RedirectResponse(url="/setup", status_code=303)
 
     cfg = AppConfig(raw_music_directory=raw_dir, catalog_file=cat_file)
+    # Persist the last selection (optional convenience). The app will NOT auto-load
+    # it on startup; users still reselect per run.
     save_config(cfg)
 
-    # refresh global state
+    # Refresh global state for this run
     state.cfg = cfg
+    state.session_configured = True
     state.load()
 
     return RedirectResponse(url="/", status_code=303)
