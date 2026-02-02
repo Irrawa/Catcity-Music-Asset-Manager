@@ -57,6 +57,26 @@ Enter:
 
 Click **Rescan** to import tracks.
 
+## One-click start (recommended for non-programmers)
+
+### Windows
+1) Double-click **00_install_windows.bat** (first time only)
+2) Double-click **01_start_windows.bat**
+
+It will start the backend service and automatically open your browser to:
+- `http://127.0.0.1:8000/setup` (or a nearby free port if 8000 is already in use)
+
+To stop the service, close the window.
+
+### macOS / Linux
+```bash
+chmod +x 00_install_mac_linux.sh 01_start_mac_linux.sh
+./00_install_mac_linux.sh   # first time only
+./01_start_mac_linux.sh
+```
+
+This launches the service and opens your browser to `/setup`.
+
 ## How the catalog works
 
 ### Track identity (why UUID)

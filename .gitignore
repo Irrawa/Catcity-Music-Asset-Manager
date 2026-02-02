@@ -1,3 +1,5 @@
 # Ignore the __pycache__ directory itself and everything inside it
 /app/__pycache__/
 /app/__pycache__/**
+/.venv/
+/.venv/**
