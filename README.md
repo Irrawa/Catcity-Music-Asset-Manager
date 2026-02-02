@@ -31,6 +31,9 @@ It scans a messy raw music directory, builds a metadata catalog JSON, and provid
 
 ### 1) Install dependencies
 
+> Note (China / GFW): the one-click install scripts use the **Tsinghua PyPI mirror** by default.
+> If you install manually, you can also use the mirror, e.g. add `-i https://pypi.tuna.tsinghua.edu.cn/simple` to your `pip install`.
+
 ```bash
 cd music_catalog_manager
 python -m venv .venv

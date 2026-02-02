@@ -3,6 +3,10 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
+# Use Tsinghua PyPI mirror by default (works well behind GFW)
+export PIP_INDEX_URL="https://pypi.tuna.tsinghua.edu.cn/simple"
+export PIP_TRUSTED_HOST="pypi.tuna.tsinghua.edu.cn"
+
 echo "=========================================="
 echo " Catcity Music Asset Manager - Install"
 echo "=========================================="

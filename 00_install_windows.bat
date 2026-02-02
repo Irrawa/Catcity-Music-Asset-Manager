@@ -1,6 +1,10 @@
 @echo off
 setlocal
 
+REM Use Tsinghua PyPI mirror by default (works well behind GFW)
+set "PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple"
+set "PIP_TRUSTED_HOST=pypi.tuna.tsinghua.edu.cn"
+
 cd /d %~dp0
 
 echo ==========================================
